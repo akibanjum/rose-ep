@@ -432,15 +432,15 @@ input:focus-visible{outline:none}
         g.rotation.y = i * Math.PI * 2 / 5 + (rnd() - .5) * .35; h.scale.setScalar(.8 + .35 * rnd()); head.add(g); sepals.push(h);
       }
 
-      const cBase = lin(0x3a0714), cMid = lin(0xa3112f), cTip = lin(0xd42a55), cLip = lin(0xf0507a);
+      const cBase = lin(0x2a0510), cMid = lin(0x8e0f26), cTip = lin(0xc01f3c), cLip = lin(0xd8445c);
       const petalGeo = (q, r) => {
         const g = new TH.PlaneGeometry(1, 1, 20, 24), p = g.attributes.position, n = p.count, col = [], U = [], V = [];
-        const A0 = 1.15 + .3 * r, Rg = .4 * (.9 + .2 * r), lip = .08 + .5 * q * q, wob = .02 + .07 * q, sk = (r - .5) * .5, ph0 = r * 40, ph1 = r * 23;
+        const A0 = 1.35 + .25 * r, Rg = .4 * (.9 + .2 * r), lip = .05 + .3 * q * q, wob = .015 + .05 * q, sk = (r - .5) * .5, ph0 = r * 40, ph1 = r * 23;
         for (let i = 0; i < n; i++) { U.push(p.getX(i) * 2); V.push(cl(p.getY(i) + .5)); }
         // o = 0: tightly wrapped bud shape, o = 1: relaxed petal with a rolled-back, ruffled lip
         const sh = (u, v, o) => {
           // widest about two-thirds up, narrow claw at the base, softly rounded tip
-          const w = Math.pow(Math.max(0, Math.sin(Math.PI * Math.pow(v, 1.85))), .55) * (1 + .08 * Math.sin(v * 5 + ph1) * ss(.5, 1, v));
+          const w = Math.pow(Math.max(0, Math.sin(Math.PI * Math.pow(v, 1.6))), .42) * (1 + .08 * Math.sin(v * 5 + ph1) * ss(.5, 1, v));
           const lf = Math.pow(Math.max(0, v - .5) / .5, 2), au = Math.abs(u);
           const R = Rg * (.42 + .58 * Math.pow(Math.max(0, Math.sin(Math.PI * Math.pow(v, .8))), .8)) + o * (lip * lf + .09 * q * Math.pow(au, 3) * ss(.3, 1, v));
           const ph = u * A0 * (1 - .15 * o) * w;
@@ -469,10 +469,10 @@ input:focus-visible{outline:none}
         return g;
       };
       const petalMat = new TH.MeshPhysicalMaterial({ vertexColors: true, roughness: .62, side: TH.DoubleSide, clearcoat: .1, clearcoatRoughness: .6, emissive: 0x14020a, envMapIntensity: 1.1, morphTargets: true, morphNormals: true });
-      if (petalMat.sheen === null) petalMat.sheen = new TH.Color(0xff6a8c);
+      if (petalMat.sheen === null) petalMat.sheen = new TH.Color(0xb02c48);
       const NP = 36, ps = [];
       for (let k = 0; k < NP; k++) {
-        const q = k / (NP - 1), r1 = rnd(), r2 = rnd(), s = (.34 + .66 * Math.pow(q, .8)) * (.88 + .22 * r2);
+        const q = k / (NP - 1), r1 = rnd(), r2 = rnd(), s = (.42 + .58 * Math.pow(q, .85)) * (.9 + .2 * r2);
         const grp = new TH.Group(), m = new TH.Mesh(petalGeo(q, r1), petalMat);
         m.scale.setScalar(s); m.frustumCulled = false; grp.add(m); head.add(grp);
         ps.push({ grp, m, q, r1, a: k * 2.39996 + (r2 - .5) * .5, dl: (1 - q) * .42 + r1 * .05 });
@@ -495,9 +495,9 @@ input:focus-visible{outline:none}
         ps.forEach(p => {
           const e = eo((bloomAmt - p.dl) / .5);
           p.grp.rotation.y = p.a + (1 - e) * .35;
-          p.m.position.z = e * .14 * p.q;
+          p.m.position.z = e * .14 * p.q; p.m.position.y = e * .22 * (1 - p.q);
           p.m.rotation.z = (p.r1 - .5) * .3 * e;
-          p.m.rotation.x = ((2 + 7 * p.q) * (1 - e) + (6 + 66 * Math.pow(p.q, 1.1) + (p.r1 - .5) * 14) * e) * Math.PI / 180;
+          p.m.rotation.x = ((2 + 7 * p.q) * (1 - e) + (4 + 40 * Math.pow(p.q, 1.25) + (p.r1 - .5) * 10) * e) * Math.PI / 180;
           p.m.morphTargetInfluences[0] = e;
         });
         if (!reduce) { plant.rotation.y = Math.sin(now / 3000) * .42; plant.rotation.z = Math.sin(now / 3100) * .02; }
