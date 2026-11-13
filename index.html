@@ -140,8 +140,9 @@ input:focus-visible{outline:none}
 .stage:not(.grown) .rose-btn{cursor:default}
 
 .petal{
-  position:absolute;z-index:2;left:50%;top:32%;width:11px;height:15px;
-  background:var(--rose);border-radius:80% 0 80% 0;opacity:0;pointer-events:none;
+  position:absolute;z-index:2;left:50%;top:32%;width:13px;height:17px;
+  background:radial-gradient(ellipse at 30% 25%,#e8456b,#a10f33 62%,#5a0817);
+  border-radius:65% 35% 60% 40% / 75% 65% 35% 25%;box-shadow:0 2px 5px #0006;opacity:0;pointer-events:none;
   animation:fall var(--d) ease-in forwards;
 }
 
@@ -318,100 +319,152 @@ input:focus-visible{outline:none}
       const TH = THREE, cv = $("gl");
       const ren = new TH.WebGLRenderer({ canvas: cv, alpha: true, antialias: true });
       ren.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+      ren.outputEncoding = TH.sRGBEncoding;
+      ren.toneMapping = TH.ACESFilmicToneMapping; ren.toneMappingExposure = .95;
       const scene = new TH.Scene(), cam = new TH.PerspectiveCamera(36, 1, .1, 50);
       cam.position.set(0, 2.1, 6.6); cam.lookAt(0, .5, 0);
-      scene.add(new TH.HemisphereLight(0xffd6dc, 0x2a0a14, .95));
-      const key = new TH.DirectionalLight(0xfff0e6, 1.15); key.position.set(3, 5, 5); scene.add(key);
-      const rim = new TH.PointLight(0xff4d79, 1.5, 12); rim.position.set(-3, 2, -3); scene.add(rim);
-      const plant = new TH.Group(); scene.add(plant);
-      const green = new TH.MeshStandardMaterial({ color: 0x2f9150, roughness: .55, side: TH.DoubleSide, depthWrite: true });
+      const lin = h => new TH.Color(h).convertSRGBToLinear();
+      const mix = (a, b, t) => a.clone().lerp(b, cl(t));
+      const ss = (a, b, x) => { x = cl((x - a) / (b - a)); return x * x * (3 - 2 * x); };
+      let seed = 11; const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
 
+      // soft studio reflections generated in code, so the petals catch light like velvet
+      const pm = new TH.PMREMGenerator(ren), studio = new TH.Scene();
+      studio.background = new TH.Color(0x1b0a12);
+      [[0xfff2e8, 9, 3.5, [4, 5, 5]], [0xff6a8c, 6, 3, [-5, 2, -3]], [0xffffff, 3, 6, [0, 7, 0]], [0x7a2038, 2, 6, [0, -4, 3]]].forEach(([c, k, s, p]) => {
+        const m = new TH.Mesh(new TH.PlaneGeometry(s, s), new TH.MeshBasicMaterial({ color: new TH.Color(c).multiplyScalar(k), side: TH.DoubleSide }));
+        m.position.set(...p); m.lookAt(0, 0, 0); studio.add(m);
+      });
+      scene.environment = pm.fromScene(studio, .03).texture;
+      scene.add(new TH.HemisphereLight(0xffdde4, 0x2a0a14, .3));
+      const key = new TH.DirectionalLight(0xfff0e6, 1.6); key.position.set(3, 5, 5); scene.add(key);
+      const rim = new TH.DirectionalLight(0xff5c82, 1.5); rim.position.set(-4, 2, -3); scene.add(rim);
+
+      const plant = new TH.Group(); scene.add(plant);
+      const mat = (c, rough, o) => new TH.MeshPhysicalMaterial(Object.assign({ color: c, roughness: rough, side: TH.DoubleSide }, o));
+      const stemMat = mat(0xffffff, .5, { vertexColors: true });
+      const leafMat = mat(0xffffff, .42, { vertexColors: true, clearcoat: .35, clearcoatRoughness: .4 });
+      const greenMat = mat(lin(0x2d7a3a), .5), thornMat = mat(lin(0x6b1f2a), .45);
+
+      // tapered stem, rebuilt as it bends toward the viewer
       const curve = new TH.CatmullRomCurve3([[0, -1.75, 0], [.07, -.7, .05], [-.05, .35, -.02], [0, 1.2, 0]].map(a => new TH.Vector3(...a)));
-      const base = Array.from({ length: 61 }, (_, i) => curve.getPoint(i / 60)), att = [];
-      const stemMesh = new TH.Mesh(new TH.TubeGeometry(curve, 60, .045, 8, false), new TH.MeshStandardMaterial({ color: 0x2b8247, roughness: .6 }));
-      plant.add(stemMesh);
-      
-      const TILT = Math.PI / 4;
+      const SEG = 60, RAD = 9, base = Array.from({ length: SEG + 1 }, (_, i) => curve.getPoint(i / SEG)), att = [];
+      const sPos = new Float32Array((SEG + 1) * RAD * 3), sCol = new Float32Array((SEG + 1) * RAD * 3), idx = [];
+      const cA = lin(0x1d4f2c), cB = lin(0x3f8444);
+      for (let i = 0; i <= SEG; i++) { const c = mix(cA, cB, i / SEG); for (let j = 0; j < RAD; j++) sCol.set([c.r, c.g, c.b], (i * RAD + j) * 3); }
+      for (let i = 0; i < SEG; i++) for (let j = 0; j < RAD; j++) { const a = i * RAD + j, b = i * RAD + (j + 1) % RAD; idx.push(a, b, a + RAD, b, b + RAD, a + RAD); }
+      const sGeo = new TH.BufferGeometry();
+      sGeo.setAttribute("position", new TH.BufferAttribute(sPos, 3)); sGeo.setAttribute("color", new TH.BufferAttribute(sCol, 3)); sGeo.setIndex(idx);
+      const stemMesh = new TH.Mesh(sGeo, stemMat); stemMesh.frustumCulled = false; plant.add(stemMesh);
+      const vT = new TH.Vector3(), vN = new TH.Vector3(), vB = new TH.Vector3(), vP = new TH.Vector3(), vZ = new TH.Vector3(0, 0, 1);
+      function stem(pts) {
+        for (let i = 0; i <= SEG; i++) {
+          vT.copy(pts[Math.min(i + 1, SEG)]).sub(pts[Math.max(i - 1, 0)]).normalize();
+          vN.crossVectors(vZ, vT).normalize(); vB.crossVectors(vT, vN);
+          const r = .06 - .022 * i / SEG;
+          for (let j = 0; j < RAD; j++) {
+            const a = j / RAD * Math.PI * 2;
+            vP.copy(pts[i]).addScaledVector(vN, Math.cos(a) * r).addScaledVector(vB, Math.sin(a) * r);
+            sPos.set([vP.x, vP.y, vP.z], (i * RAD + j) * 3);
+          }
+        }
+        sGeo.attributes.position.needsUpdate = true; sGeo.computeVertexNormals();
+      }
+
+      // serrated, waxy leaflets with a pale midrib and reddish margins
+      const cL0 = lin(0x2f8a45), cL1 = lin(0x123f24), cVein = lin(0x86b866), cEdge = lin(0x7a2232);
+      const leafGeo = (L, W, teeth) => {
+        const g = new TH.PlaneGeometry(1, 1, 6, teeth ? 44 : 14), p = g.attributes.position, col = [];
+        for (let i = 0; i < p.count; i++) {
+          const u = p.getX(i) * 2, v = cl(p.getY(i) + .5), m = Math.abs(u);
+          const w = Math.pow(Math.max(0, Math.sin(Math.PI * Math.pow(v, .78))), .8) * (teeth ? 1 - .1 * ((v * 10) % 1) : 1);
+          p.setXYZ(i, v * L, u * W * w, .45 * m * W * w - .28 * L * v * v);
+          const c = mix(cL0, cL1, m * .9 + (1 - v) * .1).lerp(cVein, Math.exp(-u * u * 80) * .5).lerp(cEdge, Math.pow(m, 5) * .45 * ss(.15, 1, v));
+          col.push(c.r, c.g, c.b);
+        }
+        g.setAttribute("color", new TH.Float32BufferAttribute(col, 3)); g.computeVertexNormals(); return g;
+      };
+      const leafA = leafGeo(.62, .2, true), leafB = leafGeo(.5, .16, true), thorns = [], leaves = [];
+      const thGeo = new TH.ConeGeometry(.05, .22, 6);
+      [[-1.3, 1], [-.9, 4.2], [-.5, 2.4], [-.1, 5.4], [.35, 3.3]].forEach(([y, a]) => {
+        const g = new TH.Group(), t = new TH.Mesh(thGeo, thornMat);
+        t.position.x = .04; t.rotation.z = -1.75; t.scale.z = .5; g.add(t); g.rotation.y = a;
+        g.userData.i = Math.round((y + 1.75) / 2.95 * SEG); att.push({ o: g, i: g.userData.i }); thorns.push(g); plant.add(g);
+      });
+      const leaf = (y, az, tilt, sc) => {
+        const g = new TH.Group(), arm = new TH.Group();
+        arm.rotation.z = tilt; g.add(arm);
+        const pet = new TH.Mesh(new TH.CylinderGeometry(.012, .02, .36, 5), greenMat);
+        pet.rotation.z = Math.PI / 2; pet.position.x = .18; arm.add(pet);
+        [[.34, 0, 1, leafA], [.18, .95, .72, leafB], [.18, -.95, .72, leafB]].forEach(([x, yaw, s, geo]) => {
+          const h = new TH.Group(), m = new TH.Mesh(geo, leafMat);
+          m.rotation.x = -Math.PI / 2; h.add(m); h.position.x = x; h.rotation.y = yaw; h.scale.setScalar(s); arm.add(h);
+        });
+        g.userData.sc = sc; g.userData.i = Math.round((y + 1.75) / 2.95 * SEG); g.rotation.y = az;
+        att.push({ o: g, i: g.userData.i }); plant.add(g); leaves.push(g);
+      };
+      leaf(-1, .5, .45, 1); leaf(-.4, 3.7, .4, .85);
+
+      // flower head: calyx, reflexing sepals, and a golden-angle spiral of velvet petals
+      const TILT = Math.PI / 4, HS = .7, head = new TH.Group();
       let bent = base, lastB = -1;
+      head.position.set(0, 1.22, 0); plant.add(head);
       function rebuild(b) {
-        let p = base[0].clone();
-        bent = [p];
-        for (let i = 1; i <= 60; i++) {
-          const factor = Math.pow(i / 60, 1.6);
-          const zOff = TILT * b * factor;
-          const d = base[i].clone().sub(base[i - 1]);
-          p = p.clone().add(new TH.Vector3(d.x, d.y, d.z + (zOff / 60))); 
+        let p = base[0].clone(); bent = [p];
+        for (let i = 1; i <= SEG; i++) {
+          p = p.clone().add(base[i].clone().sub(base[i - 1]));
+          p.z += TILT * b * Math.pow(i / SEG, 1.6) / SEG;
           bent.push(p);
         }
-        stemMesh.geometry.dispose();
-        stemMesh.geometry = new TH.TubeGeometry(new TH.CatmullRomCurve3(bent), 60, .045, 8, false);
-        att.forEach(a => { a.o.position.copy(bent[a.i]); a.o.position.x += a.dx; });
-        head.position.copy(bent[60]); head.position.y += .02;
+        stem(bent);
+        att.forEach(a => a.o.position.copy(bent[a.i]));
+        head.position.copy(bent[SEG]); head.position.y += .02;
         head.rotation.x = TILT * b;
       }
-      const at = y => curve.getPoint((y + 1.75) / 2.95);
-      [[-1.2, 1], [-.6, 4], [-.05, 2.3]].forEach(([y, a]) => {
-        const t = new TH.Mesh(new TH.ConeGeometry(.04, .15, 6), green);
-        t.position.copy(at(y)); t.position.x += .05; t.rotation.z = -1.2; t.rotation.y = a; plant.add(t);
-        att.push({ o: t, i: Math.round((y + 1.75) / 2.95 * 60), dx: .05 });
-      });
-
-      const leafGeo = (L, W) => {
-        const sh = new TH.Shape();
-        sh.moveTo(0, 0); sh.bezierCurveTo(L * .15, W, L * .6, W * 1.1, L, 0); sh.bezierCurveTo(L * .6, -W * 1.1, L * .15, -W, 0, 0);
-        const g = new TH.ShapeGeometry(sh, 12), q = g.attributes.position;
-        for (let i = 0; i < q.count; i++) q.setZ(i, -.25 * q.getX(i) ** 2 / L + .3 * Math.abs(q.getY(i)));
-        g.computeVertexNormals(); return g;
-      };
-      const lg = leafGeo(.95, .2), leaves = [];
-      [[-.95, .5, .5, 1], [-.35, 3.6, .45, .85]].forEach(([y, a, tilt, sc]) => {
-        const g = new TH.Group(), m = new TH.Mesh(lg, green);
-        m.rotation.z = tilt; g.add(m); g.position.copy(at(y)); g.rotation.y = a; g.userData.sc = sc;
-        att.push({ o: g, i: Math.round((y + 1.75) / 2.95 * 60), dx: 0 });
-        plant.add(g); leaves.push(g);
-      });
-
-      const HS = .62, head = new TH.Group();
-      head.position.set(0, 1.22, 0); plant.add(head);
-      
-      const rec = new TH.Mesh(new TH.SphereGeometry(.05, 16, 12), green); 
-      rec.position.y = -.12; 
-      head.add(rec);
-      
-      const sg = leafGeo(.35, .05), sepals = [];
+      const hip = new TH.Mesh(new TH.SphereGeometry(.2, 20, 14), greenMat);
+      hip.scale.set(1, 1.2, 1); hip.position.y = -.2; head.add(hip);
+      const sg = leafGeo(.8, .075, false), sepals = [];
       for (let i = 0; i < 5; i++) {
-        const g = new TH.Group(), m = new TH.Mesh(sg, green);
-        g.add(m); g.rotation.y = i * Math.PI * 2 / 5; g.position.y = -.08; head.add(g); sepals.push(m);
+        const g = new TH.Group(), h = new TH.Group(), m = new TH.Mesh(sg, leafMat);
+        m.rotation.x = -Math.PI / 2; h.add(m); h.position.set(.17, -.12, 0); g.add(h);
+        g.rotation.y = i * Math.PI * 2 / 5; head.add(g); sepals.push(h);
       }
-      const petalGeo = (dark, light) => {
-        const g = new TH.PlaneGeometry(1, 1, 10, 12), q = g.attributes.position, col = [];
-        const c0 = new TH.Color(dark), c1 = new TH.Color(light), c = new TH.Color();
-        for (let i = 0; i < q.count; i++) {
-          const u = q.getX(i) * 2, v = q.getY(i) + .5;
-          let hw = .1 + .4 * Math.sin(v * Math.PI / 2);
-          if (v > .6) hw *= Math.sqrt(Math.max(0, 1 - ((v - .6) / .4) ** 2));
-          const x = u * hw;
-          q.setXYZ(i, x, v, -.9 * x * x * (.4 + v) + 4 * Math.max(0, v - .8) ** 2);
-          c.copy(c0).lerp(c1, Math.min(1, v * .85 + Math.abs(u) ** 3 * .25)); col.push(c.r, c.g, c.b);
+
+      const cBase = lin(0x3a0714), cMid = lin(0xa3112f), cTip = lin(0xd42a55), cLip = lin(0xf0507a);
+      const petalGeo = (q, r) => {
+        const g = new TH.PlaneGeometry(1, 1, 16, 18), p = g.attributes.position, n = p.count, col = [], U = [], V = [];
+        const A0 = 1.2 + .25 * r, Rg = .4 * (.9 + .2 * r), lip = .08 + .5 * q * q, wob = .015 + .045 * q, sk = (r - .5) * .4;
+        for (let i = 0; i < n; i++) { U.push(p.getX(i) * 2); V.push(cl(p.getY(i) + .5)); }
+        // o = 0: tightly wrapped bud shape, o = 1: relaxed petal with a curled-back lip
+        const sh = (u, v, o) => {
+          const w = Math.sqrt(Math.max(0, Math.sin(Math.PI * Math.pow(v, 1.1))));
+          const lf = Math.pow(Math.max(0, v - .55) / .45, 2);
+          const R = Rg * (.42 + .58 * Math.pow(Math.max(0, Math.sin(Math.PI * Math.pow(v, .8))), .8)) + o * lip * lf;
+          const ph = u * A0 * (1 - .15 * o) * w;
+          return [R * Math.sin(ph) + sk * v * v * .2, v - o * .3 * lip * lf, R * Math.cos(ph) + o * wob * Math.sin(u * 4.5 + r * 7) * ss(.45, 1, v) * Math.abs(u)];
+        };
+        const fill = o => { for (let i = 0; i < n; i++) p.setXYZ(i, ...sh(U[i], V[i], o)); g.computeVertexNormals(); return [p.array.slice(), g.attributes.normal.array.slice()]; };
+        const [p1, n1] = fill(1); fill(0);
+        g.morphAttributes.position = [new TH.BufferAttribute(p1, 3)];
+        g.morphAttributes.normal = [new TH.BufferAttribute(n1, 3)];
+        for (let i = 0; i < n; i++) {
+          const u = U[i], v = V[i];
+          const ao = (.42 + .58 * ss(0, .5, v)) * (.62 + .38 * Math.pow(q, .7)) * (.93 + .14 * r) * (1 + .05 * Math.sin(u * 22 * (.5 + v) + r * 9));
+          const c = mix(cBase, cMid, ss(0, .55, v)).lerp(cTip, ss(.6, 1, v) * .75).lerp(cLip, ss(.9, 1, v) * Math.pow(Math.abs(u), 1.5) * .4);
+          col.push(c.r * ao, c.g * ao, c.b * ao);
         }
         g.setAttribute("color", new TH.Float32BufferAttribute(col, 3));
-        g.computeVertexNormals(); return g;
+        return g;
       };
-      const rings = [
-        { n: 7, r: [.08, .22], h: 1, tl: [5, 64], y: -0.04, d: 0, c: [0x7a0a24, 0xff6a8a] },
-        { n: 6, r: [.06, .16], h: .88, tl: [2, 46], y: -0.02, d: .08, c: [0x6a0820, 0xf5557a] },
-        { n: 5, r: [.04, .12], h: .74, tl: [-3, 30], y: 0, d: .16, c: [0x56061b, 0xe03f66] },
-        { n: 4, r: [.03, .08], h: .6, tl: [-6, 16], y: .02, d: .24, c: [0x430414, 0xc82050] },
-        { n: 3, r: [.02, .04], h: .46, tl: [-10, 4], y: .04, d: .32, c: [0x380310, 0xb01844] }
-      ], ps = [];
-      rings.forEach((R, ri) => {
-        const geo = petalGeo(...R.c), mat = new TH.MeshStandardMaterial({ vertexColors: true, roughness: .5, side: TH.DoubleSide, transparent: true, opacity: 0.99, depthWrite: false });
-        for (let i = 0; i < R.n; i++) {
-          const grp = new TH.Group(), m = new TH.Mesh(geo, mat), j = .9 + Math.random() * .2;
-          m.scale.set(R.h * .8 * j, R.h * j, R.h * j); grp.add(m); head.add(grp);
-          ps.push({ grp, m, R, a: i / R.n * Math.PI * 2 + ri * .65 + Math.random() * .25, dl: R.d + i * .03 });
-        }
-      });
+      const petalMat = new TH.MeshPhysicalMaterial({ vertexColors: true, roughness: .62, side: TH.DoubleSide, clearcoat: .1, clearcoatRoughness: .6, emissive: 0x14020a, envMapIntensity: 1.1, morphTargets: true, morphNormals: true });
+      if (petalMat.sheen === null) petalMat.sheen = new TH.Color(0xff6a8c);
+      const NP = 30, ps = [];
+      for (let k = 0; k < NP; k++) {
+        const q = k / (NP - 1), r1 = rnd(), r2 = rnd(), s = (.34 + .66 * Math.pow(q, .8)) * (.95 + .1 * r2);
+        const grp = new TH.Group(), m = new TH.Mesh(petalGeo(q, r1), petalMat);
+        m.scale.setScalar(s); m.frustumCulled = false; grp.add(m); head.add(grp);
+        ps.push({ grp, m, q, a: k * 2.39996 + (r2 - .5) * .3, dl: (1 - q) * .42 + r1 * .05 });
+      }
 
       function size() {
         const w = cv.clientWidth || 300, h = cv.clientHeight || 350;
@@ -420,20 +473,21 @@ input:focus-visible{outline:none}
       size(); addEventListener("resize", size);
 
       (function frame(now) {
-        const tt = (now - growStart) / 1000;
+        const tt = (now - growStart) / 1000, sw = ss(.04, .75, bloomAmt);
         if (bloomAmt !== lastB) { lastB = bloomAmt; rebuild(bloomAmt * bloomAmt * (3 - 2 * bloomAmt)); }
-        stemMesh.geometry.setDrawRange(0, bloomAmt > 0 ? Infinity : Math.floor(cl(tt / 2.2) * 60) * 48);
+        stemMesh.geometry.setDrawRange(0, bloomAmt > 0 ? Infinity : Math.floor(cl(tt / 2.2) * SEG) * RAD * 6);
+        thorns.forEach(g => g.scale.setScalar(Math.max(eo((tt / 2.2 * SEG - g.userData.i) / 5), .001)));
         leaves.forEach((g, i) => g.scale.setScalar(Math.max(eo(tt - 1.5 - i * .4) * g.userData.sc, .001)));
         head.scale.setScalar(Math.max(eo((tt - 2.3) / 1.3) * HS, .001));
-        sepals.forEach(m => m.rotation.z = -.5 - .7 * bloomAmt);
+        sepals.forEach(h => { h.rotation.z = 1.2 - 2.3 * sw; });
         ps.forEach(p => {
-          const e = eo((bloomAmt - p.dl) / .5), R = p.R;
-          p.grp.position.y = R.y;
-          p.grp.rotation.y = p.a + (1 - e) * .5;
-          p.m.position.z = R.r[0] + (R.r[1] - R.r[0]) * e;
-          p.m.rotation.x = (R.tl[0] + (R.tl[1] - R.tl[0]) * e) * Math.PI / 180;
+          const e = eo((bloomAmt - p.dl) / .5);
+          p.grp.rotation.y = p.a + (1 - e) * .35;
+          p.m.position.z = e * .14 * p.q;
+          p.m.rotation.x = ((2 + 7 * p.q) * (1 - e) + (6 + 66 * Math.pow(p.q, 1.1)) * e) * Math.PI / 180;
+          p.m.morphTargetInfluences[0] = e;
         });
-        if (!reduce) { plant.rotation.y = Math.sin(now / 2600) * .5; plant.rotation.z = Math.sin(now / 3100) * .025; }
+        if (!reduce) { plant.rotation.y = Math.sin(now / 3000) * .42; plant.rotation.z = Math.sin(now / 3100) * .02; }
         ren.render(scene, cam);
         requestAnimationFrame(frame);
       })(performance.now());
