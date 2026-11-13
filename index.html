@@ -195,6 +195,8 @@ input:focus-visible{outline:none}
 @keyframes fall{
   0%{opacity:0;transform:translate(0,0) rotate(0)}
   12%{opacity:1}
+  35%{transform:translate(calc(var(--x)*.2 + 16px),110px) rotate(calc(var(--r)*.3))}
+  65%{transform:translate(calc(var(--x)*.7 - 14px),230px) rotate(calc(var(--r)*.65))}
   100%{opacity:0;transform:translate(var(--x),350px) rotate(var(--r))}
 }
 @media (prefers-reduced-motion:reduce){
@@ -403,7 +405,7 @@ input:focus-visible{outline:none}
         g.userData.sc = sc; g.userData.i = Math.round((y + 1.75) / 2.95 * SEG); g.rotation.y = az;
         att.push({ o: g, i: g.userData.i }); plant.add(g); leaves.push(g);
       };
-      leaf(-1, .5, .45, 1); leaf(-.4, 3.7, .4, .85);
+      leaf(-1, .5, .45, 1); leaf(-.4, 3.7, .4, .85); leaf(.15, 2.3, .35, .62);
 
       // flower head: calyx, reflexing sepals, and a golden-angle spiral of velvet petals
       const TILT = Math.PI / 4, HS = .7, head = new TH.Group();
@@ -427,43 +429,53 @@ input:focus-visible{outline:none}
       for (let i = 0; i < 5; i++) {
         const g = new TH.Group(), h = new TH.Group(), m = new TH.Mesh(sg, leafMat);
         m.rotation.x = -Math.PI / 2; h.add(m); h.position.set(.17, -.12, 0); g.add(h);
-        g.rotation.y = i * Math.PI * 2 / 5; head.add(g); sepals.push(h);
+        g.rotation.y = i * Math.PI * 2 / 5 + (rnd() - .5) * .35; h.scale.setScalar(.8 + .35 * rnd()); head.add(g); sepals.push(h);
       }
 
       const cBase = lin(0x3a0714), cMid = lin(0xa3112f), cTip = lin(0xd42a55), cLip = lin(0xf0507a);
       const petalGeo = (q, r) => {
-        const g = new TH.PlaneGeometry(1, 1, 16, 18), p = g.attributes.position, n = p.count, col = [], U = [], V = [];
-        const A0 = 1.2 + .25 * r, Rg = .4 * (.9 + .2 * r), lip = .08 + .5 * q * q, wob = .015 + .045 * q, sk = (r - .5) * .4;
+        const g = new TH.PlaneGeometry(1, 1, 20, 24), p = g.attributes.position, n = p.count, col = [], U = [], V = [];
+        const A0 = 1.15 + .3 * r, Rg = .4 * (.9 + .2 * r), lip = .08 + .5 * q * q, wob = .02 + .07 * q, sk = (r - .5) * .5, ph0 = r * 40, ph1 = r * 23;
         for (let i = 0; i < n; i++) { U.push(p.getX(i) * 2); V.push(cl(p.getY(i) + .5)); }
-        // o = 0: tightly wrapped bud shape, o = 1: relaxed petal with a curled-back lip
+        // o = 0: tightly wrapped bud shape, o = 1: relaxed petal with a rolled-back, ruffled lip
         const sh = (u, v, o) => {
-          const w = Math.sqrt(Math.max(0, Math.sin(Math.PI * Math.pow(v, 1.1))));
-          const lf = Math.pow(Math.max(0, v - .55) / .45, 2);
-          const R = Rg * (.42 + .58 * Math.pow(Math.max(0, Math.sin(Math.PI * Math.pow(v, .8))), .8)) + o * lip * lf;
+          // widest about two-thirds up, narrow claw at the base, softly rounded tip
+          const w = Math.pow(Math.max(0, Math.sin(Math.PI * Math.pow(v, 1.85))), .55) * (1 + .08 * Math.sin(v * 5 + ph1) * ss(.5, 1, v));
+          const lf = Math.pow(Math.max(0, v - .5) / .5, 2), au = Math.abs(u);
+          const R = Rg * (.42 + .58 * Math.pow(Math.max(0, Math.sin(Math.PI * Math.pow(v, .8))), .8)) + o * (lip * lf + .09 * q * Math.pow(au, 3) * ss(.3, 1, v));
           const ph = u * A0 * (1 - .15 * o) * w;
-          return [R * Math.sin(ph) + sk * v * v * .2, v - o * .3 * lip * lf, R * Math.cos(ph) + o * wob * Math.sin(u * 4.5 + r * 7) * ss(.45, 1, v) * Math.abs(u)];
+          // uneven ruffle along the rim plus a faint crinkle across the surface
+          const rf = o * ss(.45, 1, v) * (wob * Math.sin(u * 4.5 + ph0) * au + .6 * wob * Math.sin(u * 9.5 + v * 3 + ph1) * Math.pow(au, 1.5));
+          const cr = o * .012 * Math.sin(u * 5 + v * 7 + ph0) * Math.sin(v * 9 + u * 3 + ph1);
+          return [R * Math.sin(ph) + sk * v * v * .2, v - o * .3 * lip * lf, R * Math.cos(ph) + rf + cr];
         };
         const fill = o => { for (let i = 0; i < n; i++) p.setXYZ(i, ...sh(U[i], V[i], o)); g.computeVertexNormals(); return [p.array.slice(), g.attributes.normal.array.slice()]; };
         const [p1, n1] = fill(1); fill(0);
         g.morphAttributes.position = [new TH.BufferAttribute(p1, 3)];
         g.morphAttributes.normal = [new TH.BufferAttribute(n1, 3)];
+        const tint = r - .5;
         for (let i = 0; i < n; i++) {
-          const u = U[i], v = V[i];
+          const u = U[i], v = V[i], au = Math.abs(u);
           const ao = (.42 + .58 * ss(0, .5, v)) * (.62 + .38 * Math.pow(q, .7)) * (.93 + .14 * r) * (1 + .05 * Math.sin(u * 22 * (.5 + v) + r * 9));
-          const c = mix(cBase, cMid, ss(0, .55, v)).lerp(cTip, ss(.6, 1, v) * .75).lerp(cLip, ss(.9, 1, v) * Math.pow(Math.abs(u), 1.5) * .4);
-          col.push(c.r * ao, c.g * ao, c.b * ao);
+          // fine veining, a little darker in the grooves
+          const vein = 1 - .07 * (.5 + .5 * Math.sin(u * 46 + ph0 + Math.sin(v * 6 + ph1) * 1.4)) * ss(.08, .6, v) * (1 - .5 * ss(.8, 1, v));
+          const c = mix(cBase, cMid, ss(0, .55, v)).lerp(cTip, ss(.6, 1, v) * .75).lerp(cLip, ss(.88, 1, v) * Math.pow(au, 1.3) * .5);
+          // no two petals share exactly the same red
+          c.r *= 1 + .1 * tint; c.g *= 1 + .5 * tint; c.b *= 1 - .2 * tint;
+          const k = ao * vein;
+          col.push(c.r * k, c.g * k, c.b * k);
         }
         g.setAttribute("color", new TH.Float32BufferAttribute(col, 3));
         return g;
       };
       const petalMat = new TH.MeshPhysicalMaterial({ vertexColors: true, roughness: .62, side: TH.DoubleSide, clearcoat: .1, clearcoatRoughness: .6, emissive: 0x14020a, envMapIntensity: 1.1, morphTargets: true, morphNormals: true });
       if (petalMat.sheen === null) petalMat.sheen = new TH.Color(0xff6a8c);
-      const NP = 30, ps = [];
+      const NP = 36, ps = [];
       for (let k = 0; k < NP; k++) {
-        const q = k / (NP - 1), r1 = rnd(), r2 = rnd(), s = (.34 + .66 * Math.pow(q, .8)) * (.95 + .1 * r2);
+        const q = k / (NP - 1), r1 = rnd(), r2 = rnd(), s = (.34 + .66 * Math.pow(q, .8)) * (.88 + .22 * r2);
         const grp = new TH.Group(), m = new TH.Mesh(petalGeo(q, r1), petalMat);
         m.scale.setScalar(s); m.frustumCulled = false; grp.add(m); head.add(grp);
-        ps.push({ grp, m, q, a: k * 2.39996 + (r2 - .5) * .3, dl: (1 - q) * .42 + r1 * .05 });
+        ps.push({ grp, m, q, r1, a: k * 2.39996 + (r2 - .5) * .5, dl: (1 - q) * .42 + r1 * .05 });
       }
 
       function size() {
@@ -484,7 +496,8 @@ input:focus-visible{outline:none}
           const e = eo((bloomAmt - p.dl) / .5);
           p.grp.rotation.y = p.a + (1 - e) * .35;
           p.m.position.z = e * .14 * p.q;
-          p.m.rotation.x = ((2 + 7 * p.q) * (1 - e) + (6 + 66 * Math.pow(p.q, 1.1)) * e) * Math.PI / 180;
+          p.m.rotation.z = (p.r1 - .5) * .3 * e;
+          p.m.rotation.x = ((2 + 7 * p.q) * (1 - e) + (6 + 66 * Math.pow(p.q, 1.1) + (p.r1 - .5) * 14) * e) * Math.PI / 180;
           p.m.morphTargetInfluences[0] = e;
         });
         if (!reduce) { plant.rotation.y = Math.sin(now / 3000) * .42; plant.rotation.z = Math.sin(now / 3100) * .02; }
